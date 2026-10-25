@@ -1,7 +1,7 @@
 # ClipboardTyper
 
 Windows-Dienst: **Strg + Alt + Umschalt + Einfg** sendet den Text der Zwischenablage
-per `SendKeys` als Tastatureingabe an das aktive Fenster. Das ist praktisch überall dort,
+als Tastatureingabe an das aktive Fenster. Das ist praktisch überall dort,
 wo Einfügen nicht geht (VM-Konsolen wie Proxmox/noVNC, Hyper-V, iLO/iDRAC, manche
 Remote-Sitzungen, Anmeldemasken).
 
@@ -14,14 +14,19 @@ mit zwei Rollen:
 | Rolle | Läuft als | Aufgabe |
 |-------|-----------|---------|
 | Dienst | `LocalSystem`, Sitzung 0 | startet in jeder Benutzersitzung einen Agenten und startet ihn neu, falls er beendet wird (auch nach An-/Abmeldung, RDP) |
-| Agent (`--agent`) | angemeldeter Benutzer, unsichtbar | registriert den Hotkey, liest die Zwischenablage und tippt sie mit `SendKeys` |
+| Agent (`--agent`) | angemeldeter Benutzer, unsichtbar | registriert den Hotkey, liest die Zwischenablage und tippt sie per `SendInput` |
 
 Ist der Benutzer Administrator, startet der Dienst den Agenten mit erhöhten Rechten, damit
 auch in Fenster getippt werden kann, die als Administrator laufen.
 
 Details:
 - Getippt wird erst, wenn Strg/Alt/Umschalt/Einfg losgelassen wurden.
-- Zeilenumbrüche werden zu `{ENTER}`, Tabs zu `{TAB}`; SendKeys-Sonderzeichen (`+^%~(){}[]`) werden maskiert.
+- Jedes Zeichen wird im Tastaturlayout des Zielfensters auf die passende Taste (inkl. Umschalt/AltGr)
+  abgebildet und mit virtuellem Tastencode **und** Scancode gesendet – wie bei einer echten Tastatur.
+- Tottasten (im deutschen Layout `^`, `` ` ``, `´`) werden mit Leertaste abgeschlossen, damit sie nicht
+  mit dem nächsten Zeichen verschmelzen (`^e` bleibt `^e` und wird nicht zu `ê`).
+- Zeichen, die im Layout nicht vorkommen, werden als Unicode-Eingabe gesendet.
+- Zeilenumbrüche werden zu Enter, Tabs zu Tab.
 - **Esc** während des Tippens bricht ab.
 - Nur Text; Inhalte über 20 000 Zeichen werden ignoriert.
 - Protokoll des Agenten: `%LOCALAPPDATA%\ClipboardTyper\agent.log`, Dienstmeldungen in der Ereignisanzeige (Anwendung).
@@ -56,10 +61,11 @@ In `src/Agent.cs`:
 - `MaxChars`: maximale Textlänge
 - Hotkey: Aufruf von `RegisterHotKey` in `TryRegister()`
 
+In `src/KeyboardSender.cs`: Abbildung Zeichen → Tasten.
+
 ## Hinweise
 
-- Die Zeichen werden über das **aktuelle Tastaturlayout** des Zielfensters erzeugt. Zeichen, die
-  im Layout nicht existieren, können nicht getippt werden. Bei VM-Konsolen muss das Layout des
+- Die Zeichen werden über das **aktuelle Tastaturlayout** des Zielfensters erzeugt. Bei VM-Konsolen muss das Layout des
   Gastsystems zum Layout des Host-PCs passen.
 - Ist die Kombination bereits von einem anderen Programm belegt, versucht der Agent alle
   5 Sekunden erneut, sie zu registrieren (siehe Log).

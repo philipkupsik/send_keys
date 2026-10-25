@@ -8,7 +8,7 @@ namespace ClipboardTyper
 {
     /// <summary>
     /// Läuft unsichtbar in der Benutzersitzung, registriert Strg+Alt+Umschalt+Einfg und
-    /// sendet bei Betätigung den Text der Zwischenablage per SendKeys als Tastatureingabe.
+    /// sendet bei Betätigung den Text der Zwischenablage als Tastatureingabe (siehe KeyboardSender).
     /// </summary>
     internal sealed class Agent : NativeWindow, IDisposable
     {
@@ -80,52 +80,23 @@ namespace ClipboardTyper
             // die getippten Zeichen als Tastenkombinationen interpretiert.
             WaitForKeysReleased(5000);
 
-            foreach (string keys in ToSendKeys(text))
+            // Zeilenumbrüche vereinheitlichen: \r\n und \r -> \n
+            text = text.Replace("\r\n", "\n").Replace('\r', '\n');
+            IntPtr layout = KeyboardSender.GetTargetLayout();
+
+            for (int i = 0; i < text.Length; i++)
             {
                 if (IsDown(NativeMethods.VK_ESCAPE))
                 {
                     Log("Senden mit Esc abgebrochen.");
                     break;
                 }
-                SendKeys.SendWait(keys);
-                Thread.Sleep(DelayBetweenKeysMs);
-            }
-        }
-
-        /// <summary>Wandelt den Text in einzelne SendKeys-Sequenzen um (inkl. Escaping).</summary>
-        internal static System.Collections.Generic.IEnumerable<string> ToSendKeys(string text)
-        {
-            for (int i = 0; i < text.Length; i++)
-            {
                 char c = text[i];
-                switch (c)
-                {
-                    case '\r':
-                        if (i + 1 < text.Length && text[i + 1] == '\n')
-                            i++;
-                        yield return "{ENTER}";
-                        break;
-                    case '\n':
-                        yield return "{ENTER}";
-                        break;
-                    case '\t':
-                        yield return "{TAB}";
-                        break;
-                    case '+': case '^': case '%': case '~':
-                    case '(': case ')': case '{': case '}': case '[': case ']':
-                        yield return "{" + c + "}";
-                        break;
-                    default:
-                        if (char.IsHighSurrogate(c) && i + 1 < text.Length)
-                        {
-                            yield return new string(new[] { c, text[++i] });
-                        }
-                        else if (!char.IsControl(c))
-                        {
-                            yield return c.ToString();
-                        }
-                        break;
-                }
+                if (char.IsHighSurrogate(c) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                    KeyboardSender.SendSurrogatePair(c, text[++i]);
+                else if (c == '\n' || c == '\t' || !char.IsControl(c))
+                    KeyboardSender.SendChar(c, layout);
+                Thread.Sleep(DelayBetweenKeysMs);
             }
         }
 
